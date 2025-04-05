@@ -11,7 +11,7 @@ pub struct BootSector {
     pub(crate) sector_size: u16,
     pub(crate) block_size: u32,
     pub(crate) block_map_count: u32,
-    pub(crate) first_root_entity_lba: u32,
+    pub(crate) first_root_entity_lba: u64,
 }
 
 impl BootSector {
@@ -27,7 +27,7 @@ impl BootSector {
             sector_size,
             block_size,
             block_map_count: block_map_count as u32,
-            first_root_entity_lba: (first_root_entry / sector_size as usize) as u32,
+            first_root_entity_lba: (first_root_entry / sector_size as usize) as u64,
         }
     }
 

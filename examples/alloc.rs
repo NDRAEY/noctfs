@@ -68,12 +68,16 @@ fn main() -> std::io::Result<()> {
 
     let mut fs = fs.unwrap();
 
-    let res2 = fs.allocate_blocks(6).unwrap();
-    fs.set_chain_size(res2, 6);
-    fs.set_chain_size(res2, 5);
-    fs.set_chain_size(res2, 7);
+    let res2 = fs.allocate_bytes(16).unwrap();
+    // fs.set_chain_size(res2, 6);
+    // fs.set_chain_size(res2, 5);
+    // fs.set_chain_size(res2, 7);
 
     let a = fs.get_chain(res2);
+
+    let mut data = [0u8; 8];
+
+    fs.read_blocks_data(res2, &mut data, 0).unwrap();
 
     println!("Result: {:?}", a);
 

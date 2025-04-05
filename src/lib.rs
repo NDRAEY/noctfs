@@ -8,7 +8,7 @@ use bootsector::BootSector;
 use device::Device;
 use no_std_io::io::{
     self, Error,
-    SeekFrom::{End, Start},
+    SeekFrom::{Current, End, Start},
 };
 
 pub mod bootsector;
@@ -51,7 +51,7 @@ impl<'dev> NoctFS<'dev> {
         let size = device.seek(End(0))?;
         device.seek(Start(0))?;
 
-        let bootsector = BootSector::with_data(
+        let mut bootsector = BootSector::with_data(
             size.try_into().unwrap(),
             DEFAULT_SECTOR_SIZE as _,
             *DEFAULT_BLOCK_SIZE as _,
@@ -71,6 +71,9 @@ impl<'dev> NoctFS<'dev> {
 
         // First block is always set as reserved
         fs.write_block(0, 0xFFFF_FFFF_FFFF_FFFF);
+
+        // And finally, create a root directory.
+        fs.create_root_directory()?;
 
         Ok(())
     }
@@ -212,4 +215,131 @@ impl<'dev> NoctFS<'dev> {
             self.extend_chain_by(start_block, count - chain_length);
         }
     }
+
+    pub fn allocate_bytes(&mut self, byte_count: usize) -> Option<u64> {
+        let blocks = byte_count.div_ceil(self.bootsector.block_size as usize);
+
+        self.allocate_blocks(blocks as _)
+    }
+
+    #[inline]
+    pub fn datazone_offset(&self) -> usize {
+        self.bootsector.sector_size as usize
+            + (self.bootsector.first_root_entity_lba as usize
+                * self.bootsector.sector_size as usize)
+    }
+
+    #[inline]
+    pub fn datazone_offset_with_block(&self, block: u64) -> u64 {
+        self.datazone_offset() as u64 + (block as u64 * self.bootsector.block_size as u64)
+    }
+
+    pub fn read_blocks_data(
+        &mut self,
+        start_block: u64,
+        data: &mut [u8],
+        offset: u64,
+    ) -> io::Result<()> {
+        let chain = self.get_chain(start_block);
+        let chain_off = offset / self.bootsector.block_size as u64;
+        let first_occurency_offset = offset % self.bootsector.block_size as u64;
+
+        if chain_off as usize > chain.len() {
+            return Ok(());
+        }
+
+        let mut data_length = data.len();
+
+        for (nr, &i) in chain.iter().enumerate() {
+            let f_offset = self.datazone_offset_with_block(i);
+
+            self.device.seek(Start(f_offset))?;
+
+            let data_offset = nr as u64 * self.bootsector.block_size as u64;
+            let mut read_size = if data_length < self.bootsector.block_size as usize {
+                data_length
+            } else {
+                self.bootsector.block_size as usize
+            };
+
+            if nr == 0 {
+                self.device.seek(Current(first_occurency_offset as _))?;
+                
+                read_size -= first_occurency_offset as usize;    
+            }
+
+            let end_offset = data_offset + read_size as u64;
+
+            println!("{:?}", data_offset as usize..end_offset as usize);
+
+            self.device
+                .read(&mut data[data_offset as usize..end_offset as usize])?;
+
+            data_length -= read_size;
+        }
+
+        Ok(())
+    }
+
+    pub fn write_blocks_data(
+        &mut self,
+        start_block: u64,
+        data: &[u8],
+        offset: u64,
+    ) -> io::Result<()> {
+        let chain = self.get_chain(start_block);
+        let chain_off = offset / self.bootsector.block_size as u64;
+        let first_occurency_offset = offset % self.bootsector.block_size as u64;
+
+        if chain_off as usize > chain.len() {
+            return Ok(());
+        }
+
+        let mut data_length = data.len();
+
+        for (nr, &i) in chain.iter().enumerate() {
+            let f_offset = self.datazone_offset_with_block(i);
+
+            self.device.seek(Start(f_offset))?;
+
+            let data_offset = nr as u64 * self.bootsector.block_size as u64;
+            let mut write_size = if data_length < self.bootsector.block_size as usize {
+                data_length
+            } else {
+                self.bootsector.block_size as usize
+            };
+
+            if nr == 0 {
+                self.device.seek(Current(first_occurency_offset as _))?;
+
+                write_size -= first_occurency_offset as usize;
+            }
+
+            let end_offset = data_offset + write_size as u64;
+
+            println!("{:?}", data_offset as usize..end_offset as usize);
+
+            self.device
+                .write(&data[data_offset as usize..end_offset as usize])?;
+
+            data_length -= write_size;
+        }
+
+        Ok(())
+    }
+
+    fn create_root_directory(&mut self) -> io::Result<u64> {
+        let block = self.allocate_blocks(1);
+        let block_container = self.allocate_blocks(1);
+        let entity = entity::Entity::directory("/", 0, block_container.unwrap());
+        let data = entity.as_raw();
+
+        self.write_blocks_data(block.unwrap(), &data, 0)?;
+
+        Ok(block.unwrap())
+    }
+
+    // pub fn create_directory(&mut self, directory_block: u64, name: String) {
+
+    // }
 }

@@ -13,12 +13,13 @@ bitflags! {
     }
 }
 
-///  [0..4]           (4 bytes) - Entity name length
-///  [4..4+n]         (n bytes) - Entity name in UTF-8
-///  [4+n..4+n+8]     (8 bytes) - Entity size (file count if entity is directory)
-///  [4+n+8..4+n+16]  (8 bytes) - Data offset (block number)
-///  [4+n+16..4+n+20] (4 bytes) - Flags
-///  [4+n+20..4+n+24] (4 bytes) - Vendor data size
+///  [0..4]           (4 bytes) - Entity header size
+///  [4..8]           (4 bytes) - Entity name length
+///  [8..8+n]         (n bytes) - Entity name in UTF-8
+///  [8+n..8+n+8]     (8 bytes) - Entity size (file count if entity is directory)
+///  [8+n+8..8+n+16]  (8 bytes) - Data offset (block number)
+///  [8+n+16..8+n+20] (4 bytes) - Flags
+///  [8+n+20..8+n+24] (4 bytes) - Vendor data size
 
 pub struct Entity {
     name: String,
@@ -39,11 +40,11 @@ impl Entity {
         }
     }
 
-    pub fn directory(name: String, size: usize, start_block: usize) -> Self {
+    pub fn directory<T: ToString>(name: T, size: usize, start_block: u64) -> Self {
         Self {
-            name,
+            name: name.to_string(),
             size: size as _,
-            start_block: start_block as u64,
+            start_block: start_block,
             flags: EntityFlags::DIRECTORY,
             vendor_data_size: 0,
         }
@@ -66,11 +67,18 @@ impl Entity {
         data.extend_from_slice(&r_flags);
         data.extend_from_slice(&r_vendor_data_size);
 
-        data.into_boxed_slice()
+        let data_len = (data.len() as u32).to_le_bytes();
+
+        let mut new_data: Vec<u8> = Vec::new();
+        new_data.extend_from_slice(&data_len);
+        new_data.extend_from_slice(&data);
+
+        new_data.into_boxed_slice()
     }
 
     pub fn from_raw(data: &[u8]) -> Self {
-        let (namesize_bytes, rest) = data.split_at(4);
+        let (_, rest) = data.split_at(4);    // Skip entity header size
+        let (namesize_bytes, rest) = rest.split_at(4);
 
         let namesize = u32::from_le_bytes(*array_ref![namesize_bytes, 0, 4]) as usize;
 
