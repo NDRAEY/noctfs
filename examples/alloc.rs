@@ -101,8 +101,9 @@ fn main() -> std::io::Result<()> {
     fs.create_directory(apps_folder.start_block, "Qt");
 
     fs.create_file(config_folder.start_block, "system_info.cfg");
-    fs.create_file(config_folder.start_block, "pkg.cfg");
+    let pkg_r = fs.create_file(config_folder.start_block, "pkg.cfg");
 
+    fs.delete_file(config_folder.start_block, &pkg_r);
     
     fn list_dir(fs: &mut NoctFS<'_>, dir: &Entity, level: usize) {
         let ents = fs.list_directory(dir.start_block);

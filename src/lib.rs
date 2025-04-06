@@ -382,7 +382,7 @@ impl<'dev> NoctFS<'dev> {
 
         // Find free space
         while index < data.len() {
-            let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
+            let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
 
             // println!("[{index} / {}] Header size: {}", data.len(), header_size);
 
@@ -442,19 +442,28 @@ impl<'dev> NoctFS<'dev> {
 
         let mut index = 0usize;
 
-        // Find free space
         while index < data.len() {
-            let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
+            let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
+
+            println!("[{} / {}] Header size: {header_size}", index, data.len());
 
             if header_size == 0 {
-                return None;
+                println!("zero");
+                break;
             }
 
             if data[index..index + raw_data.len()] == *raw_data {
                 return Some(index);
             }
 
-            index += header_size as usize;
+            // let cur_entity = Entity::from_raw(&data[index..index + header_size as usize + 4]);
+            // println!("{} {}", cur_entity.name, entity.name);
+
+            // if cur_entity.name == entity.name {
+            //     return Some(index);
+            // }
+
+            index += header_size as usize + 4;
         }
 
         None
@@ -512,7 +521,7 @@ impl<'dev> NoctFS<'dev> {
             if header_size == 0 {
                 break;
             }
-            
+
             let entity = Entity::from_raw(&data[index..]);
 
             ents.push(entity);
@@ -521,5 +530,23 @@ impl<'dev> NoctFS<'dev> {
         }
 
         ents
+    }
+
+    pub fn delete_file(&mut self, directory_block: BlockAddress, entity: &Entity) {
+        if entity.is_directory() {
+            return;
+        }
+
+        let mut data = self.read_chain_data_vec(directory_block);
+        let off = self.get_entity_offset(directory_block, entity).unwrap();
+        let entity_size = entity.fact_size() as usize;
+        let off_end = off + entity_size;
+
+        data.copy_within(off_end.., off);
+
+        self.free_blocks(entity.start_block);
+
+        self.write_blocks_data(directory_block, data.as_slice(), 0)
+            .unwrap();
     }
 }
