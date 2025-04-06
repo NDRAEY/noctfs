@@ -4,8 +4,10 @@ extern crate alloc;
 
 use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
+use arrayref::array_ref;
 use bootsector::BootSector;
 use device::Device;
+use entity::Entity;
 use no_std_io::io::{
     self, Error,
     SeekFrom::{Current, End, Start},
@@ -15,10 +17,14 @@ pub mod bootsector;
 pub mod device;
 pub mod entity;
 
+pub type BlockAddress = u64;
+
 const ALLOWED_BLOCK_SIZES: &[u32] = &[512, 1024, 2048, 4096, 8192, 16384];
 const DEFAULT_BLOCK_SIZE: &u32 = &ALLOWED_BLOCK_SIZES[4]; // 8192
 const DEFAULT_SECTOR_SIZE: usize = 512;
 const FILESYSTEM_CODENAME: &[u8] = b"NoctFS__";
+
+const BLOCK_ADDRESS_SIZE: usize = core::mem::size_of::<BlockAddress>();
 
 #[derive(Debug)]
 pub enum NoctFSError {
@@ -47,14 +53,18 @@ impl<'dev> NoctFS<'dev> {
         Ok(Self { bootsector, device })
     }
 
-    pub fn format(device: &'dev mut dyn Device) -> io::Result<()> {
+    pub fn format(
+        device: &'dev mut dyn Device,
+        sector_size: Option<usize>,
+        block_size: Option<usize>,
+    ) -> io::Result<()> {
         let size = device.seek(End(0))?;
         device.seek(Start(0))?;
 
-        let mut bootsector = BootSector::with_data(
+        let bootsector = BootSector::with_data(
             size.try_into().unwrap(),
-            DEFAULT_SECTOR_SIZE as _,
-            *DEFAULT_BLOCK_SIZE as _,
+            sector_size.unwrap_or(DEFAULT_SECTOR_SIZE) as _,
+            block_size.unwrap_or(*DEFAULT_BLOCK_SIZE as usize) as _,
         );
 
         // Write bootsector
@@ -66,7 +76,7 @@ impl<'dev> NoctFS<'dev> {
         let mut fs = Self::new(device).unwrap();
 
         for i in 0..bootsector.block_map_count {
-            fs.write_block(i as u64, 0);
+            fs.write_block(i as BlockAddress, 0);
         }
 
         // First block is always set as reserved
@@ -78,7 +88,7 @@ impl<'dev> NoctFS<'dev> {
         Ok(())
     }
 
-    pub fn find_block(&mut self) -> Option<u64> {
+    pub fn find_block(&mut self) -> Option<BlockAddress> {
         for i in 0..self.bootsector.block_map_count {
             let blk = self.get_block(i as _);
 
@@ -90,13 +100,14 @@ impl<'dev> NoctFS<'dev> {
         None
     }
 
-    pub fn get_block(&mut self, nr: u64) -> Option<u64> {
+    pub fn get_block(&mut self, nr: BlockAddress) -> Option<BlockAddress> {
         if nr >= self.bootsector.block_map_count as u64 {
             return None;
         }
 
-        let offset = self.bootsector.sector_size as u64 + (nr * 8);
-        let mut block_raw: [u8; 8] = [0; 8];
+        let offset =
+            self.bootsector.sector_size as BlockAddress + (nr * BLOCK_ADDRESS_SIZE as BlockAddress);
+        let mut block_raw: [u8; BLOCK_ADDRESS_SIZE] = [0; BLOCK_ADDRESS_SIZE];
 
         self.device.seek(Start(offset as _)).unwrap();
         self.device.read(&mut block_raw).unwrap();
@@ -104,25 +115,26 @@ impl<'dev> NoctFS<'dev> {
         Some(u64::from_le_bytes(block_raw))
     }
 
-    pub fn write_block(&mut self, nr: u64, value: u64) {
-        if nr >= self.bootsector.block_map_count as u64 {
+    pub fn write_block(&mut self, nr: BlockAddress, value: BlockAddress) {
+        if nr >= self.bootsector.block_map_count as BlockAddress {
             return;
         }
 
-        let offset = self.bootsector.sector_size as u64 + (nr * 8);
-        let block_raw: [u8; 8] = value.to_le_bytes();
+        let offset =
+            self.bootsector.sector_size as BlockAddress + (nr * BLOCK_ADDRESS_SIZE as BlockAddress);
+        let block_raw: [u8; BLOCK_ADDRESS_SIZE] = value.to_le_bytes();
 
         self.device.seek(Start(offset as _)).unwrap();
         self.device.write(&block_raw).unwrap();
     }
 
-    pub fn allocate_blocks(&mut self, count: u32) -> Option<u64> {
+    pub fn allocate_blocks(&mut self, count: u32) -> Option<BlockAddress> {
         if count == 0 {
             return None;
         }
 
-        let first_block: Option<u64> = self.find_block();
-        let mut previous_block: Option<u64> = first_block;
+        let first_block = self.find_block();
+        let mut previous_block = first_block;
 
         for _ in 0..count {
             let new_block = self.find_block().unwrap();
@@ -140,8 +152,8 @@ impl<'dev> NoctFS<'dev> {
         first_block
     }
 
-    pub fn get_chain(&mut self, start_block: u64) -> Box<[u64]> {
-        let mut blocks: Vec<u64> = vec![];
+    pub fn get_chain(&mut self, start_block: BlockAddress) -> Box<[u64]> {
+        let mut blocks: Vec<BlockAddress> = vec![];
         let mut current_block = start_block;
 
         while let Some(block) = self.get_block(current_block) {
@@ -153,7 +165,7 @@ impl<'dev> NoctFS<'dev> {
         blocks.into_boxed_slice()
     }
 
-    pub fn free_blocks(&mut self, start_block: u64) {
+    pub fn free_blocks(&mut self, start_block: BlockAddress) {
         if start_block == 0 {
             return;
         }
@@ -174,7 +186,7 @@ impl<'dev> NoctFS<'dev> {
         }
     }
 
-    pub fn extend_chain_by(&mut self, start_block: u64, count: usize) {
+    pub fn extend_chain_by(&mut self, start_block: BlockAddress, count: usize) {
         let chain = self.get_chain(start_block);
 
         let last = chain.last().unwrap();
@@ -184,7 +196,7 @@ impl<'dev> NoctFS<'dev> {
         self.write_block(*last, allocated);
     }
 
-    pub fn shrink_chain_by(&mut self, start_block: u64, count: usize) {
+    pub fn shrink_chain_by(&mut self, start_block: BlockAddress, count: usize) {
         let chain = self.get_chain(start_block);
 
         if count == 0 {
@@ -204,7 +216,7 @@ impl<'dev> NoctFS<'dev> {
         }
     }
 
-    pub fn set_chain_size(&mut self, start_block: u64, count: usize) {
+    pub fn set_chain_size(&mut self, start_block: BlockAddress, count: usize) {
         let chain_length = self.get_chain(start_block).len();
 
         if chain_length == count {
@@ -230,13 +242,14 @@ impl<'dev> NoctFS<'dev> {
     }
 
     #[inline]
-    pub fn datazone_offset_with_block(&self, block: u64) -> u64 {
-        self.datazone_offset() as u64 + (block as u64 * self.bootsector.block_size as u64)
+    pub fn datazone_offset_with_block(&self, block: BlockAddress) -> BlockAddress {
+        self.datazone_offset() as BlockAddress
+            + (block as BlockAddress * self.bootsector.block_size as BlockAddress)
     }
 
     pub fn read_blocks_data(
         &mut self,
-        start_block: u64,
+        start_block: BlockAddress,
         data: &mut [u8],
         offset: u64,
     ) -> io::Result<()> {
@@ -264,8 +277,8 @@ impl<'dev> NoctFS<'dev> {
 
             if nr == 0 {
                 self.device.seek(Current(first_occurency_offset as _))?;
-                
-                read_size -= first_occurency_offset as usize;    
+
+                read_size -= first_occurency_offset as usize;
             }
 
             let end_offset = data_offset + read_size as u64;
@@ -283,7 +296,7 @@ impl<'dev> NoctFS<'dev> {
 
     pub fn write_blocks_data(
         &mut self,
-        start_block: u64,
+        start_block: BlockAddress,
         data: &[u8],
         offset: u64,
     ) -> io::Result<()> {
@@ -312,7 +325,7 @@ impl<'dev> NoctFS<'dev> {
             if nr == 0 {
                 self.device.seek(Current(first_occurency_offset as _))?;
 
-                write_size -= first_occurency_offset as usize;
+                // write_size -= first_occurency_offset as usize;
             }
 
             let end_offset = data_offset + write_size as u64;
@@ -331,7 +344,7 @@ impl<'dev> NoctFS<'dev> {
     fn create_root_directory(&mut self) -> io::Result<u64> {
         let block = self.allocate_blocks(1);
         let block_container = self.allocate_blocks(1);
-        let entity = entity::Entity::directory("/", 0, block_container.unwrap());
+        let entity = Entity::directory("(root)", 0, block_container.unwrap());
         let data = entity.as_raw();
 
         self.write_blocks_data(block.unwrap(), &data, 0)?;
@@ -339,7 +352,149 @@ impl<'dev> NoctFS<'dev> {
         Ok(block.unwrap())
     }
 
-    // pub fn create_directory(&mut self, directory_block: u64, name: String) {
+    pub fn get_root_entity(&mut self) -> io::Result<Entity> {
+        let chain_size = self.get_chain(1).len();
+        let mut data = vec![0u8; chain_size * self.bootsector.block_size as usize];
 
-    // }
+        self.read_blocks_data(1, data.as_mut_slice(), 0)?;
+
+        Ok(Entity::from_raw(&data))
+    }
+
+    fn read_chain_data_vec(&mut self, start_block: BlockAddress) -> Vec<u8> {
+        let chain_size = self.get_chain(start_block).len();
+        let mut data = vec![0u8; chain_size * self.bootsector.block_size as usize];
+
+        self.read_blocks_data(start_block, data.as_mut_slice(), 0)
+            .unwrap();
+
+        data
+    }
+
+    pub fn allocate_for_entity(
+        &mut self,
+        directory_block: BlockAddress,
+        entity: &Entity,
+    ) -> Option<usize> {
+        let mut data = self.read_chain_data_vec(directory_block);
+
+        let mut index = 0usize;
+
+        // Find free space
+        while index < data.len() {
+            let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
+
+            println!("Header size: {}", header_size);
+
+            if header_size == 0 {
+                return Some(index);
+            }
+
+            index += header_size as usize + 4;
+
+            if entity.fact_size() >= (data.len() - index) as _ {
+                self.extend_chain_by(directory_block, 1);
+
+                data = self.read_chain_data_vec(directory_block);
+            }
+        }
+
+        None
+    }
+
+    pub fn write_entity(&mut self, directory_block: BlockAddress, entity: &Entity) {
+        let allocated = self.allocate_for_entity(directory_block, entity).unwrap();
+        let mut data = self.read_chain_data_vec(directory_block);
+        let raw_entity = entity.as_raw();
+
+        data[allocated..allocated + raw_entity.len()].copy_from_slice(&raw_entity);
+
+        self.write_blocks_data(directory_block, &data, 0).unwrap();
+    }
+
+    pub fn create_directory<T: ToString>(&mut self, directory_block: u64, name: T) -> Entity {
+        let block = self.allocate_blocks(1).unwrap();
+        let entity = Entity::directory(name, 0, block);
+
+        self.write_entity(directory_block, &entity);
+
+        entity
+    }
+
+    pub fn create_file<T: ToString>(&mut self, directory_block: u64, name: T) -> Entity {
+        let block = self.allocate_blocks(1).unwrap();
+        let entity = Entity::file(name, 0, block);
+
+        self.write_entity(directory_block, &entity);
+
+        entity
+    }
+
+    pub fn get_entity_offset(
+        &mut self,
+        directory_block: BlockAddress,
+        entity: &Entity,
+    ) -> Option<usize> {
+        let data = self.read_chain_data_vec(directory_block);
+        let raw_data = entity.as_raw();
+
+        let mut index = 0usize;
+
+        // Find free space
+        while index < data.len() {
+            let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
+
+            if header_size == 0 {
+                return None;
+            }
+
+            if data[index..index + raw_data.len()] == *raw_data {
+                return Some(index);
+            }
+
+            index += header_size as usize;
+        }
+
+        None
+    }
+
+    pub fn write_contents_by_entity(
+        &mut self,
+        directory_block: BlockAddress,
+        entity: &Entity,
+        data: &[u8],
+        offset: u64,
+    ) {
+        let block = entity.start_block;
+        let data_len = data.len();
+
+        let chain = self.get_chain(block);
+
+        let offset_end = data_len as u64 + offset;
+
+        let target_chain_len = offset_end.div_ceil(self.bootsector.block_size as _) as usize;
+
+        self.set_chain_size(block, target_chain_len);
+
+        self.write_blocks_data(block, data, offset).unwrap();
+
+        // Update file metadata
+
+        let ent_offset = self.get_entity_offset(directory_block, entity).unwrap();
+        let mut new_entity = entity.clone();
+
+        new_entity.size = offset_end;
+
+        self.write_blocks_data(directory_block, &new_entity.as_raw(), ent_offset as _)
+            .unwrap();
+    }
+
+    pub fn read_contents_by_entity(
+        &mut self,
+        entity: &Entity,
+        data: &mut [u8],
+        offset: u64,
+    ) -> io::Result<()> {
+        self.read_blocks_data(entity.start_block, data, offset)
+    }
 }

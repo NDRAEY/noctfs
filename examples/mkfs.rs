@@ -57,7 +57,7 @@ fn main() -> std::io::Result<()> {
     let file = OpenOptions::new().write(true).open(filename)?;
     let mut device = FileDevice(file);
 
-    NoctFS::format(&mut device)
+    NoctFS::format(&mut device, None, None)
         .map_err(|a| Error::new(std::io::ErrorKind::Other, a.to_string()))?;
 
     Ok(())

@@ -6,6 +6,7 @@ use std::{
 };
 
 use no_std_io::io::{self, Error as NoStdError, ErrorKind};
+use noctfs::entity::Entity;
 use noctfs::{device::Device, NoctFS};
 
 struct FileDevice(File);
@@ -57,7 +58,7 @@ fn main() -> std::io::Result<()> {
     let file = OpenOptions::new().read(true).write(true).open(filename)?;
     let mut device = FileDevice(file);
 
-    NoctFS::format(&mut device)
+    NoctFS::format(&mut device, None, Some(512))
         .map_err(|a| Error::new(std::io::ErrorKind::Other, a.to_string()))?;
 
     let fs = NoctFS::new(&mut device);
@@ -67,19 +68,15 @@ fn main() -> std::io::Result<()> {
     }
 
     let mut fs = fs.unwrap();
+    let re = fs.get_root_entity().unwrap();
 
-    let res2 = fs.allocate_bytes(16).unwrap();
-    // fs.set_chain_size(res2, 6);
-    // fs.set_chain_size(res2, 5);
-    // fs.set_chain_size(res2, 7);
+    let file = fs.create_file(re.start_block, "Test.txt");
+    fs.write_contents_by_entity(re.start_block, &file, b"Ninja-go!\n", 10);
 
-    let a = fs.get_chain(res2);
+    let mut data = vec![0u8; 32];
+    fs.read_contents_by_entity(&file, &mut data, 10).unwrap();
 
-    let mut data = [0u8; 8];
-
-    fs.read_blocks_data(res2, &mut data, 0).unwrap();
-
-    println!("Result: {:?}", a);
+    println!("{:?}", data);
 
     Ok(())
 }
