@@ -114,7 +114,7 @@ fn main() -> std::io::Result<()> {
                 name += "/";
             }
 
-            println!("{} - {}", " ".repeat(level * 4), name);
+            println!("{} - {} (blk: {}, size: {})", " ".repeat(level * 4), name, i.start_block, i.size);
 
             if i.flags.contains(EntityFlags::DIRECTORY) {
                 list_dir(fs, &i, level + 1);
