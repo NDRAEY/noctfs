@@ -384,7 +384,7 @@ impl<'dev> NoctFS<'dev> {
         while index < data.len() {
             let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
 
-            println!("Header size: {}", header_size);
+            // println!("[{index} / {}] Header size: {}", data.len(), header_size);
 
             if header_size == 0 {
                 return Some(index);
@@ -394,6 +394,8 @@ impl<'dev> NoctFS<'dev> {
 
             if entity.fact_size() >= (data.len() - index) as _ {
                 self.extend_chain_by(directory_block, 1);
+
+                // println!("=== Extending chain!");
 
                 data = self.read_chain_data_vec(directory_block);
             }

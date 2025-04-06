@@ -70,13 +70,38 @@ fn main() -> std::io::Result<()> {
     let mut fs = fs.unwrap();
     let re = fs.get_root_entity().unwrap();
 
-    let file = fs.create_file(re.start_block, "Test.txt");
-    fs.write_contents_by_entity(re.start_block, &file, b"Ninja-go!\n", 10);
+    let system_folder = fs.create_directory(re.start_block, "System");
+    let users_folder = fs.create_directory(re.start_block, "Users");
+    let apps_folder = fs.create_directory(re.start_block, "Applications");
 
-    let mut data = vec![0u8; 32];
-    fs.read_contents_by_entity(&file, &mut data, 10).unwrap();
+    let config_folder = fs.create_directory(system_folder.start_block, "Config");
 
-    println!("{:?}", data);
+    fs.create_directory(users_folder.start_block, "NDRAEY");
+    fs.create_directory(users_folder.start_block, "User1");
+    fs.create_directory(users_folder.start_block, "User2");
+    fs.create_directory(users_folder.start_block, "User3");
+    fs.create_directory(users_folder.start_block, "Your mum");
 
+    fs.create_directory(apps_folder.start_block, "Binaries");
+    fs.create_directory(apps_folder.start_block, "Shared Libraries");
+    fs.create_directory(apps_folder.start_block, "Audacity");
+    fs.create_directory(apps_folder.start_block, "GIMP");
+    fs.create_directory(apps_folder.start_block, "Holop Rukozhop");
+    fs.create_directory(apps_folder.start_block, "Deva IDE");
+    fs.create_directory(apps_folder.start_block, "Visual Studio Code");
+    fs.create_directory(apps_folder.start_block, "Mozilla Firefox");
+    fs.create_directory(apps_folder.start_block, "Google Chrome");
+    fs.create_directory(apps_folder.start_block, "Blender");
+    fs.create_directory(apps_folder.start_block, "Web Applications");
+    fs.create_directory(apps_folder.start_block, "Ristretto");
+    fs.create_directory(apps_folder.start_block, "Pavi");
+    fs.create_directory(apps_folder.start_block, "Wireshark");
+    fs.create_directory(apps_folder.start_block, "Videolan VLC");
+    fs.create_directory(apps_folder.start_block, "Calibre");
+    fs.create_directory(apps_folder.start_block, "Qt");
+
+    fs.create_file(config_folder.start_block, "system_info.cfg");
+    fs.create_file(config_folder.start_block, "system_info.cfg");
+    
     Ok(())
 }
