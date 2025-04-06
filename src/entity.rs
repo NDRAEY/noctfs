@@ -10,7 +10,7 @@ use crate::{BlockAddress, BLOCK_ADDRESS_SIZE};
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    struct EntityFlags: u32 {
+    pub struct EntityFlags: u32 {
         const DIRECTORY = (1 << 0);
     }
 }
