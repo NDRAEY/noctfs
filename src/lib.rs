@@ -283,7 +283,7 @@ impl<'dev> NoctFS<'dev> {
 
             let end_offset = data_offset + read_size as u64;
 
-            println!("{:?}", data_offset as usize..end_offset as usize);
+            // println!("{:?}", data_offset as usize..end_offset as usize);
 
             self.device
                 .read(&mut data[data_offset as usize..end_offset as usize])?;
@@ -316,7 +316,7 @@ impl<'dev> NoctFS<'dev> {
             self.device.seek(Start(f_offset))?;
 
             let data_offset = nr as u64 * self.bootsector.block_size as u64;
-            let mut write_size = if data_length < self.bootsector.block_size as usize {
+            let write_size = if data_length < self.bootsector.block_size as usize {
                 data_length
             } else {
                 self.bootsector.block_size as usize
@@ -330,7 +330,7 @@ impl<'dev> NoctFS<'dev> {
 
             let end_offset = data_offset + write_size as u64;
 
-            println!("{:?}", data_offset as usize..end_offset as usize);
+            // println!("{:?}", data_offset as usize..end_offset as usize);
 
             self.device
                 .write(&data[data_offset as usize..end_offset as usize])?;
@@ -470,7 +470,7 @@ impl<'dev> NoctFS<'dev> {
         let block = entity.start_block;
         let data_len = data.len();
 
-        let chain = self.get_chain(block);
+        // let chain = self.get_chain(block);
 
         let offset_end = data_len as u64 + offset;
 
@@ -498,5 +498,28 @@ impl<'dev> NoctFS<'dev> {
         offset: u64,
     ) -> io::Result<()> {
         self.read_blocks_data(entity.start_block, data, offset)
+    }
+
+    pub fn list_directory(&mut self, directory_block: BlockAddress) -> Vec<Entity> {
+        let mut ents: Vec<Entity> = vec![];
+
+        let data = self.read_chain_data_vec(directory_block);
+        let mut index = 0usize;
+
+        while index < data.len() {
+            let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
+
+            if header_size == 0 {
+                break;
+            }
+            
+            let entity = Entity::from_raw(&data[index..]);
+
+            ents.push(entity);
+
+            index += header_size as usize + 4;
+        }
+
+        ents
     }
 }
