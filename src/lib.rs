@@ -7,7 +7,7 @@ use alloc::{boxed::Box, vec::Vec};
 use arrayref::array_ref;
 use bootsector::BootSector;
 use device::Device;
-use entity::Entity;
+use entity::{Entity, EntityFlags};
 use no_std_io::io::{
     self, Error,
     SeekFrom::{Current, End, Start},
@@ -61,11 +61,13 @@ impl<'dev> NoctFS<'dev> {
         let size = device.seek(End(0))?;
         device.seek(Start(0))?;
 
-        let bootsector = BootSector::with_data(
+        let mut bootsector = BootSector::with_data(
             size.try_into().unwrap(),
             sector_size.unwrap_or(DEFAULT_SECTOR_SIZE) as _,
             block_size.unwrap_or(*DEFAULT_BLOCK_SIZE as usize) as _,
         );
+
+        bootsector.first_root_entity_block = 1;
 
         // Write bootsector
 
@@ -74,6 +76,11 @@ impl<'dev> NoctFS<'dev> {
 
         // Clear chainmap
         let mut fs = Self::new(device).unwrap();
+
+        // Overwrite first 1MB
+        let empty_block = vec![0u8; 1 << 20];
+        fs.device.seek(Start(fs.datazone_offset_with_block(1)))?;
+        fs.device.write(&empty_block)?;
 
         for i in 0..bootsector.block_map_count {
             fs.write_block(i as BlockAddress, 0);
@@ -86,6 +93,10 @@ impl<'dev> NoctFS<'dev> {
         fs.create_root_directory()?;
 
         Ok(())
+    }
+
+    pub fn block_size(&self) -> usize {
+        self.bootsector.block_size as usize
     }
 
     pub fn find_block(&mut self) -> Option<BlockAddress> {
@@ -237,8 +248,7 @@ impl<'dev> NoctFS<'dev> {
     #[inline]
     pub fn datazone_offset(&self) -> usize {
         self.bootsector.sector_size as usize
-            + (self.bootsector.first_root_entity_lba as usize
-                * self.bootsector.sector_size as usize)
+            + (BLOCK_ADDRESS_SIZE * self.bootsector.block_map_count as usize)
     }
 
     #[inline]
@@ -254,26 +264,33 @@ impl<'dev> NoctFS<'dev> {
         offset: u64,
     ) -> io::Result<()> {
         let chain = self.get_chain(start_block);
-        let chain_off = offset / self.bootsector.block_size as u64;
+        let chain_off = (offset / self.bootsector.block_size as u64) as usize;
         let first_occurency_offset = offset % self.bootsector.block_size as u64;
 
         if chain_off as usize > chain.len() {
             return Ok(());
         }
 
+        let chain = &chain[chain_off..];
+
         let mut data_length = data.len();
 
         for (nr, &i) in chain.iter().enumerate() {
-            let f_offset = self.datazone_offset_with_block(i);
-
-            self.device.seek(Start(f_offset))?;
-
             let data_offset = nr as u64 * self.bootsector.block_size as u64;
             let mut read_size = if data_length < self.bootsector.block_size as usize {
                 data_length
             } else {
                 self.bootsector.block_size as usize
             };
+            
+            if read_size == 0 {
+                break;
+            }
+                        
+            let f_offset = self.datazone_offset_with_block(i);
+
+            self.device.seek(Start(f_offset))?;
+
 
             if nr == 0 {
                 self.device.seek(Current(first_occurency_offset as _))?;
@@ -301,12 +318,14 @@ impl<'dev> NoctFS<'dev> {
         offset: u64,
     ) -> io::Result<()> {
         let chain = self.get_chain(start_block);
-        let chain_off = offset / self.bootsector.block_size as u64;
+        let chain_off = (offset / self.bootsector.block_size as u64) as usize;
         let first_occurency_offset = offset % self.bootsector.block_size as u64;
 
-        if chain_off as usize > chain.len() {
+        if chain_off > chain.len() {
             return Ok(());
         }
+
+        let chain = &chain[chain_off..];
 
         let mut data_length = data.len();
 
@@ -342,23 +361,35 @@ impl<'dev> NoctFS<'dev> {
     }
 
     fn create_root_directory(&mut self) -> io::Result<u64> {
-        let block = self.allocate_blocks(1);
-        let block_container = self.allocate_blocks(1);
-        let entity = Entity::directory("(root)", 0, block_container.unwrap());
-        let data = entity.as_raw();
+        let block = self.allocate_blocks(1).unwrap();
+        //let block_container = self.allocate_blocks(1);
+        //let entity = Entity::directory("(root)", 0, block_container.unwrap());
+        //let data = entity.as_raw();
 
-        self.write_blocks_data(block.unwrap(), &data, 0)?;
+        //self.write_blocks_data(block.unwrap(), &data, 0)?;
 
-        Ok(block.unwrap())
+        let this_entity = Entity::directory(".", 0, block);
+        let parent_entity = Entity::directory("..", 0, block);
+
+        self.write_entity(block, &this_entity);
+        self.write_entity(block, &parent_entity);
+
+        Ok(block)
     }
 
     pub fn get_root_entity(&mut self) -> io::Result<Entity> {
-        let chain_size = self.get_chain(1).len();
-        let mut data = vec![0u8; chain_size * self.bootsector.block_size as usize];
+        // let chain_size = self.get_chain(1).len();
+        // let mut data = vec![0u8; chain_size * self.bootsector.block_size as usize];
 
-        self.read_blocks_data(1, data.as_mut_slice(), 0)?;
+        // self.read_blocks_data(1, data.as_mut_slice(), 0)?;
 
-        Ok(Entity::from_raw(&data))
+        Ok(Entity {
+            name: "/".to_string(),
+            size: 0,
+            start_block: 1,
+            flags: EntityFlags::DIRECTORY,
+            vendor_data_size: 0,
+        })
     }
 
     fn read_chain_data_vec(&mut self, start_block: BlockAddress) -> Vec<u8> {
@@ -384,7 +415,7 @@ impl<'dev> NoctFS<'dev> {
         while index < data.len() {
             let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
 
-            // println!("[{index} / {}] Header size: {}", data.len(), header_size);
+            println!("[{index} / {}] Header size: {}", data.len(), header_size);
 
             if header_size == 0 {
                 return Some(index);
@@ -419,6 +450,13 @@ impl<'dev> NoctFS<'dev> {
         let entity = Entity::directory(name, 0, block);
 
         self.write_entity(directory_block, &entity);
+
+
+        let this_entity = Entity::directory(".", 0, block);
+        let parent_entity = Entity::directory("..", 0, directory_block);
+
+        self.write_entity(block, &this_entity);
+        self.write_entity(block, &parent_entity);
 
         entity
     }
@@ -462,6 +500,34 @@ impl<'dev> NoctFS<'dev> {
             // if cur_entity.name == entity.name {
             //     return Some(index);
             // }
+
+            index += header_size as usize + 4;
+        }
+
+        None
+    }
+
+    pub fn get_entity_by_parent_and_block(
+        &mut self,
+        directory_block: BlockAddress,
+        entity_block: BlockAddress,
+    ) -> Option<Entity> {
+        let data = self.read_chain_data_vec(directory_block);
+        let mut index = 0usize;
+
+        while index < data.len() {
+            let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
+
+            if header_size == 0 {
+                break;
+            }
+
+            let cur_entity = Entity::from_raw(&data[index..index + header_size as usize + 4]);
+            // println!("{} {}", cur_entity.name, entity.name);
+
+            if cur_entity.start_block == entity_block {
+                return Some(cur_entity);
+            }
 
             index += header_size as usize + 4;
         }
@@ -517,6 +583,8 @@ impl<'dev> NoctFS<'dev> {
 
         while index < data.len() {
             let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
+
+            // println!("{header_size}");
 
             if header_size == 0 {
                 break;

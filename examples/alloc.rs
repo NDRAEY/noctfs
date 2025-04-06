@@ -109,7 +109,11 @@ fn main() -> std::io::Result<()> {
         let ents = fs.list_directory(dir.start_block);
         
         for i in ents {
-            let mut name = i.name.clone(); 
+            let mut name = i.name.clone();
+
+            if [".", ".."].contains(&i.name.as_str()) {
+                continue;
+            }
             
             if i.flags.contains(EntityFlags::DIRECTORY) {
                 name += "/";
@@ -117,7 +121,7 @@ fn main() -> std::io::Result<()> {
 
             println!("{} - {} (blk: {}, size: {})", " ".repeat(level * 4), name, i.start_block, i.size);
 
-            if i.flags.contains(EntityFlags::DIRECTORY) {
+            if i.is_directory() {
                 list_dir(fs, &i, level + 1);
             }
         }

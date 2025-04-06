@@ -54,7 +54,7 @@ impl Device for FileDevice {}
 fn main() -> std::io::Result<()> {
     let filename = std::env::args().skip(1).last().expect("No filename!");
 
-    let file = OpenOptions::new().write(true).open(filename)?;
+    let file = OpenOptions::new().read(true).write(true).open(filename)?;
     let mut device = FileDevice(file);
 
     NoctFS::format(&mut device, None, None)
