@@ -286,11 +286,10 @@ impl<'dev> NoctFS<'dev> {
             if read_size == 0 {
                 break;
             }
-                        
+            
             let f_offset = self.datazone_offset_with_block(i);
 
             self.device.seek(Start(f_offset))?;
-
 
             if nr == 0 {
                 self.device.seek(Current(first_occurency_offset as _))?;
@@ -300,7 +299,7 @@ impl<'dev> NoctFS<'dev> {
 
             let end_offset = data_offset + read_size as u64;
 
-            // println!("{:?}", data_offset as usize..end_offset as usize);
+            println!("{:?}", data_offset as usize..end_offset as usize);
 
             self.device
                 .read(&mut data[data_offset as usize..end_offset as usize])?;
