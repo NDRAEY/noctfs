@@ -486,20 +486,13 @@ impl<'dev> NoctFS<'dev> {
             println!("[{} / {}] Header size: {header_size}", index, data.len());
 
             if header_size == 0 {
-                println!("zero");
+                println!("empty header");
                 break;
             }
 
             if data[index..index + raw_data.len()] == *raw_data {
                 return Some(index);
             }
-
-            // let cur_entity = Entity::from_raw(&data[index..index + header_size as usize + 4]);
-            // println!("{} {}", cur_entity.name, entity.name);
-
-            // if cur_entity.name == entity.name {
-            //     return Some(index);
-            // }
 
             index += header_size as usize + 4;
         }
@@ -564,6 +557,14 @@ impl<'dev> NoctFS<'dev> {
 
         self.write_blocks_data(directory_block, &new_entity.as_raw(), ent_offset as _)
             .unwrap();
+    }
+
+    pub fn overwrite_entity_header(&mut self, directory_block: BlockAddress, entity: &Entity, new_entity: &Entity) -> Option<()> {
+        let ent_offset = self.get_entity_offset(directory_block, entity)?;
+
+        self.write_blocks_data(directory_block, &new_entity.as_raw(), ent_offset as _).unwrap();
+
+        Some(())
     }
 
     pub fn read_contents_by_entity(
