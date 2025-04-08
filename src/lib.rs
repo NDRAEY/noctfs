@@ -1,9 +1,11 @@
-// #![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
 
 use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
+use alloc::string::ToString;
+
 use arrayref::array_ref;
 use bootsector::BootSector;
 use device::Device;
