@@ -584,8 +584,6 @@ impl<'dev> NoctFS<'dev> {
         while index < data.len() {
             let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
 
-            // println!("{header_size}");
-
             if header_size == 0 {
                 break;
             }
@@ -600,11 +598,7 @@ impl<'dev> NoctFS<'dev> {
         ents
     }
 
-    pub fn delete_file(&mut self, directory_block: BlockAddress, entity: &Entity) {
-        if entity.is_directory() {
-            return;
-        }
-
+    pub fn delete_entity(&mut self, directory_block: BlockAddress, entity: &Entity) {
         let mut data = self.read_chain_data_vec(directory_block);
         let off = self.get_entity_offset(directory_block, entity).unwrap();
         let entity_size = entity.fact_size() as usize;
@@ -616,5 +610,13 @@ impl<'dev> NoctFS<'dev> {
 
         self.write_blocks_data(directory_block, data.as_slice(), 0)
             .unwrap();
+    }
+
+    pub fn delete_file(&mut self, directory_block: BlockAddress, entity: &Entity) {
+        if entity.is_directory() {
+            return;
+        }
+
+        self.delete_entity(directory_block, entity);
     }
 }

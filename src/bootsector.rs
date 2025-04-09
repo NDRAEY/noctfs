@@ -5,7 +5,7 @@ use crate::FILESYSTEM_CODENAME;
 const BOOTCODE: &[u8; 512] = include_bytes!("../static/bootcode.bin");
 
 #[derive(Debug)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct BootSector {
     pub(crate) filesystem_codename: [u8; 8],
     pub(crate) sector_size: u16,
