@@ -1,5 +1,4 @@
 use std::fs::OpenOptions;
-use std::io::Result;
 use std::{
     fs::File,
     io::{Error, Read, Seek, Write},
@@ -13,7 +12,7 @@ struct FileDevice(File);
 impl io::Read for FileDevice {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.0.read(buf).map_err(|_err| {
-            eprintln!("{}", _err.to_string());
+            eprintln!("{}", _err);
             NoStdError::new(ErrorKind::Other, "unknown")
         })
     }
@@ -22,14 +21,14 @@ impl io::Read for FileDevice {
 impl io::Write for FileDevice {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0.write(buf).map_err(|_err| {
-            eprintln!("{}", _err.to_string());
+            eprintln!("{}", _err);
             NoStdError::new(ErrorKind::Other, "unknown")
         })
     }
 
     fn flush(&mut self) -> io::Result<()> {
         self.0.flush().map_err(|_err| {
-            eprintln!("{}", _err.to_string());
+            eprintln!("{}", _err);
             NoStdError::new(ErrorKind::Other, "unknown")
         })
     }

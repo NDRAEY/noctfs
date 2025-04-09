@@ -37,7 +37,7 @@ impl Entity {
         Self {
             name: name.to_string(),
             size: size as _,
-            start_block: start_block as u64,
+            start_block,
             flags: EntityFlags::empty(),
             vendor_data_size: 0,
         }
@@ -47,7 +47,7 @@ impl Entity {
         Self {
             name: name.to_string(),
             size: size as _,
-            start_block: start_block,
+            start_block,
             flags: EntityFlags::DIRECTORY,
             vendor_data_size: 0,
         }
@@ -108,8 +108,8 @@ impl Entity {
             name,
             size,
             start_block: offset,
-            flags: flags,
-            vendor_data_size: vendor_data_size,
+            flags,
+            vendor_data_size,
         }
     }
 

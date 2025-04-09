@@ -43,8 +43,8 @@ impl<'dev> NoctFS<'dev> {
     pub fn new(device: &'dev mut dyn Device) -> Result<Self, NoctFSError> {
         let mut bs_data = [0u8; 512];
 
-        device.seek(Start(0)).map_err(|e| NoctFSError::OS(e))?;
-        device.read(&mut bs_data).map_err(|e| NoctFSError::OS(e))?;
+        device.seek(Start(0)).map_err(NoctFSError::OS)?;
+        device.read(&mut bs_data).map_err(NoctFSError::OS)?;
 
         let bootsector = BootSector::from_raw(&bs_data);
 
@@ -232,11 +232,9 @@ impl<'dev> NoctFS<'dev> {
     pub fn set_chain_size(&mut self, start_block: BlockAddress, count: usize) {
         let chain_length = self.get_chain(start_block).len();
 
-        if chain_length == count {
-            return;
-        } else if chain_length > count {
+        if chain_length > count {
             self.shrink_chain_by(start_block, chain_length - count);
-        } else if count > chain_length {
+        } else if chain_length < count {
             self.extend_chain_by(start_block, count - chain_length);
         }
     }
@@ -269,7 +267,7 @@ impl<'dev> NoctFS<'dev> {
         let chain_off = (offset / self.bootsector.block_size as u64) as usize;
         let first_occurency_offset = offset % self.bootsector.block_size as u64;
 
-        if chain_off as usize > chain.len() {
+        if chain_off > chain.len() {
             return Ok(());
         }
 
