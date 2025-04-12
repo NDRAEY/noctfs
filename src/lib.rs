@@ -2,9 +2,9 @@
 
 extern crate alloc;
 
+use alloc::string::ToString;
 use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
-use alloc::string::ToString;
 
 use arrayref::array_ref;
 use bootsector::BootSector;
@@ -152,7 +152,7 @@ impl<'dev> NoctFS<'dev> {
         for _ in 0..count {
             let new_block = self.find_block().unwrap();
 
-            #[cfg(feature="std")]
+            #[cfg(feature = "std")]
             println!("Found new block: {}", new_block);
 
             self.write_block(previous_block.unwrap(), new_block);
@@ -177,6 +177,8 @@ impl<'dev> NoctFS<'dev> {
             current_block = block;
         }
 
+        // blocks.push(current_block);
+
         blocks.into_boxed_slice()
     }
 
@@ -188,7 +190,7 @@ impl<'dev> NoctFS<'dev> {
         let mut current_block = start_block;
 
         while let Some(block) = self.get_block(current_block) {
-            #[cfg(feature="std")]
+            #[cfg(feature = "std")]
             println!("Clear block: {}", current_block);
 
             if block == 0xFFFF_FFFF_FFFF_FFFF {
@@ -271,6 +273,11 @@ impl<'dev> NoctFS<'dev> {
         let first_occurency_offset = offset % self.bootsector.block_size as u64;
 
         if chain_off > chain.len() {
+            println!(
+                "Chain offset ({}) is large than chain length ({})",
+                chain_off,
+                chain.len()
+            );
             return Ok(());
         }
 
@@ -278,41 +285,108 @@ impl<'dev> NoctFS<'dev> {
 
         let mut data_length = data.len();
 
+        println!("--- {offset} {} fco: {first_occurency_offset}", data.len());
+
+        let mut readbytes = 0usize;
+
         for (nr, &i) in chain.iter().enumerate() {
-            let data_offset = nr as u64 * self.bootsector.block_size as u64;
-            let mut read_size = if data_length < self.bootsector.block_size as usize {
-                data_length
-            } else {
-                self.bootsector.block_size as usize
-            };
+            let mut read_size = core::cmp::min(data_length, self.bootsector.block_size as usize);
             
             if read_size == 0 {
                 break;
             }
-            
+
             let f_offset = self.datazone_offset_with_block(i);
 
             self.device.seek(Start(f_offset))?;
 
             if nr == 0 {
                 self.device.seek(Current(first_occurency_offset as _))?;
-
+                
                 read_size -= first_occurency_offset as usize;
             }
+            
+            // let data_offset = nr as u64 * self.bootsector.block_size as u64;
+            let data_offset = readbytes;
+            let end_offset = data_offset + read_size;
 
-            let end_offset = data_offset + read_size as u64;
-
-            #[cfg(feature="std")]
             println!("{:?}", data_offset as usize..end_offset as usize);
 
             self.device
                 .read(&mut data[data_offset as usize..end_offset as usize])?;
 
             data_length -= read_size;
+            readbytes += read_size;
         }
 
         Ok(())
     }
+
+    // pub fn write_blocks_data(
+    //     &mut self,
+    //     start_block: BlockAddress,
+    //     data: &[u8],
+    //     offset: u64,
+    // ) -> io::Result<()> {
+    //     // Get the chain of blocks.
+    //     let chain: Box<[BlockAddress]> = self.get_chain(start_block);
+
+    //     // Calculate offsets
+    //     let chain_off = (offset / self.bootsector.block_size as u64) as usize;
+    //     let first_occurency_offset = offset % self.bootsector.block_size as u64;
+
+    //     // Peacefully exit, if we're out of range
+    //     if chain_off > chain.len() {
+    //         return Ok(());
+    //     }
+
+    //     // Crop the chain to the working area.
+    //     let chain = &chain[chain_off..];
+
+    //     println!("{:?}", &chain);
+
+    //     let mut data_length = data.len();
+
+    //     println!(
+    //         "----- Write: data length: {data_length}; offset: {offset}; {first_occurency_offset}"
+    //     );
+
+    //     let mut written = 0usize;
+
+    //     for (nr, &i) in chain.iter().enumerate() {
+    //         // If we wrote all data, bail out.
+    //         if data_length == 0 {
+    //             break;
+    //         }
+
+    //         // Get block's byte offset on disk
+    //         let f_offset: u64 = self.datazone_offset_with_block(i);
+    //         self.device.seek(Start(f_offset))?;
+
+    //         // Calculate write_size
+    //         let mut write_size = core::cmp::min(data_length, self.bootsector.block_size as usize);
+
+    //         // If we're writing first block and we have a non-null offset, seek precisely and limit our write size for first block.
+    //         if nr == 0 && first_occurency_offset != 0 {
+    //             self.device.seek(Current(first_occurency_offset as _))?;
+
+    //             write_size -= first_occurency_offset as usize;
+    //         }
+
+    //         let data_offset = written;
+    //         let end_offset = data_offset + write_size;
+
+    //         println!("{:?} -> {}", data_offset..end_offset, write_size);
+
+    //         // Write the data
+    //         self.device.write(&data[data_offset..end_offset])?;
+
+    //         data_length -= write_size;
+    //         written += write_size;
+    //     }
+
+    //     Ok(())
+    // }
 
     pub fn write_blocks_data(
         &mut self,
@@ -320,46 +394,60 @@ impl<'dev> NoctFS<'dev> {
         data: &[u8],
         offset: u64,
     ) -> io::Result<()> {
-        let chain = self.get_chain(start_block);
+        // Get the chain of blocks.
+        let chain: Box<[BlockAddress]> = self.get_chain(start_block);
+
+        // Calculate offsets
         let chain_off = (offset / self.bootsector.block_size as u64) as usize;
         let first_occurency_offset = offset % self.bootsector.block_size as u64;
 
+        // Peacefully exit, if we're out of range
         if chain_off > chain.len() {
             return Ok(());
         }
 
+        // Crop the chain to the working area.
         let chain = &chain[chain_off..];
+
+        println!("{:?}", &chain);
 
         let mut data_length = data.len();
 
+        println!(
+            "----- Write: data length: {data_length}; offset: {offset}; {first_occurency_offset}"
+        );
+
+        let mut written = 0usize;
+
         for (nr, &i) in chain.iter().enumerate() {
-            let f_offset = self.datazone_offset_with_block(i);
-
-            self.device.seek(Start(f_offset))?;
-
-            let data_offset = nr as u64 * self.bootsector.block_size as u64;
-            let write_size = if data_length < self.bootsector.block_size as usize {
-                data_length
-            } else {
-                self.bootsector.block_size as usize
-            };
-
-            if nr == 0 {
-                self.device.seek(Current(first_occurency_offset as _))?;
-
-                // write_size -= first_occurency_offset as usize;
+            if data_length == 0 {
+                break;
             }
-
-            let end_offset = data_offset + write_size as u64;
-
-            // println!("{:?}", data_offset as usize..end_offset as usize);
-
-            self.device
-                .write(&data[data_offset as usize..end_offset as usize])?;
-
+    
+            let f_offset: u64 = self.datazone_offset_with_block(i);
+            self.device.seek(Start(f_offset))?;
+    
+            let mut write_size = if nr == 0 && first_occurency_offset != 0 {
+                // Calculate available space after the offset in the first block
+                let available_in_first_block = (self.bootsector.block_size as u64 - first_occurency_offset) as usize;
+                core::cmp::min(data_length, available_in_first_block)
+            } else {
+                core::cmp::min(data_length, self.bootsector.block_size as usize)
+            };
+    
+            if nr == 0 && first_occurency_offset != 0 {
+                self.device.seek(Current(first_occurency_offset as i64))?;
+            }
+    
+            let data_offset = written;
+            let end_offset = data_offset + write_size;
+    
+            self.device.write_all(&data[data_offset..end_offset])?;
+    
             data_length -= write_size;
+            written += write_size;
         }
-
+    
         Ok(())
     }
 
@@ -418,7 +506,7 @@ impl<'dev> NoctFS<'dev> {
         while index < data.len() {
             let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
 
-            #[cfg(feature="std")]
+            #[cfg(feature = "std")]
             println!("[{index} / {}] Header size: {}", data.len(), header_size);
 
             if header_size == 0 {
@@ -455,7 +543,6 @@ impl<'dev> NoctFS<'dev> {
 
         self.write_entity(directory_block, &entity);
 
-
         let this_entity = Entity::directory(".", 0, block);
         let parent_entity = Entity::directory("..", 0, directory_block);
 
@@ -487,11 +574,11 @@ impl<'dev> NoctFS<'dev> {
         while index < data.len() {
             let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
 
-            #[cfg(feature="std")]
+            #[cfg(feature = "std")]
             println!("[{} / {}] Header size: {header_size}", index, data.len());
 
             if header_size == 0 {
-            #[cfg(feature="std")]
+                #[cfg(feature = "std")]
                 println!("empty header");
                 break;
             }
@@ -544,9 +631,7 @@ impl<'dev> NoctFS<'dev> {
         let block = entity.start_block;
         let data_len = data.len();
 
-        // let chain = self.get_chain(block);
-
-        let offset_end = data_len as u64 + offset;
+        let offset_end = core::cmp::max(entity.size, data_len as u64 + offset);
 
         let target_chain_len = offset_end.div_ceil(self.bootsector.block_size as _) as usize;
 
@@ -565,10 +650,16 @@ impl<'dev> NoctFS<'dev> {
             .unwrap();
     }
 
-    pub fn overwrite_entity_header(&mut self, directory_block: BlockAddress, entity: &Entity, new_entity: &Entity) -> Option<()> {
+    pub fn overwrite_entity_header(
+        &mut self,
+        directory_block: BlockAddress,
+        entity: &Entity,
+        new_entity: &Entity,
+    ) -> Option<()> {
         let ent_offset = self.get_entity_offset(directory_block, entity)?;
 
-        self.write_blocks_data(directory_block, &new_entity.as_raw(), ent_offset as _).unwrap();
+        self.write_blocks_data(directory_block, &new_entity.as_raw(), ent_offset as _)
+            .unwrap();
 
         Some(())
     }
