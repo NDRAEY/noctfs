@@ -151,6 +151,8 @@ impl<'dev> NoctFS<'dev> {
 
         for _ in 0..count {
             let new_block = self.find_block().unwrap();
+
+            #[cfg(feature="std")]
             println!("Found new block: {}", new_block);
 
             self.write_block(previous_block.unwrap(), new_block);
@@ -186,6 +188,7 @@ impl<'dev> NoctFS<'dev> {
         let mut current_block = start_block;
 
         while let Some(block) = self.get_block(current_block) {
+            #[cfg(feature="std")]
             println!("Clear block: {}", current_block);
 
             if block == 0xFFFF_FFFF_FFFF_FFFF {
@@ -299,6 +302,7 @@ impl<'dev> NoctFS<'dev> {
 
             let end_offset = data_offset + read_size as u64;
 
+            #[cfg(feature="std")]
             println!("{:?}", data_offset as usize..end_offset as usize);
 
             self.device
@@ -414,6 +418,7 @@ impl<'dev> NoctFS<'dev> {
         while index < data.len() {
             let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
 
+            #[cfg(feature="std")]
             println!("[{index} / {}] Header size: {}", data.len(), header_size);
 
             if header_size == 0 {
@@ -482,9 +487,11 @@ impl<'dev> NoctFS<'dev> {
         while index < data.len() {
             let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
 
+            #[cfg(feature="std")]
             println!("[{} / {}] Header size: {header_size}", index, data.len());
 
             if header_size == 0 {
+            #[cfg(feature="std")]
                 println!("empty header");
                 break;
             }
