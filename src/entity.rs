@@ -85,7 +85,7 @@ impl Entity {
     }
 
     pub fn from_raw(data: &[u8]) -> Self {
-        let (_, rest) = data.split_at(4);    // Skip entity header size
+        let (_, rest) = data.split_at(4); // Skip entity header size
         let (namesize_bytes, rest) = rest.split_at(4);
 
         let namesize = u32::from_le_bytes(*array_ref![namesize_bytes, 0, 4]) as usize;

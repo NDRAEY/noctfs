@@ -273,6 +273,7 @@ impl<'dev> NoctFS<'dev> {
         let first_occurency_offset = offset % self.bootsector.block_size as u64;
 
         if chain_off > chain.len() {
+            #[cfg(feature = "std")]
             println!(
                 "Chain offset ({}) is large than chain length ({})",
                 chain_off,
@@ -285,13 +286,14 @@ impl<'dev> NoctFS<'dev> {
 
         let mut data_length = data.len();
 
+        #[cfg(feature = "std")]
         println!("--- {offset} {} fco: {first_occurency_offset}", data.len());
 
         let mut readbytes = 0usize;
 
         for (nr, &i) in chain.iter().enumerate() {
             let mut read_size = core::cmp::min(data_length, self.bootsector.block_size as usize);
-            
+
             if read_size == 0 {
                 break;
             }
@@ -302,14 +304,15 @@ impl<'dev> NoctFS<'dev> {
 
             if nr == 0 {
                 self.device.seek(Current(first_occurency_offset as _))?;
-                
+
                 read_size -= first_occurency_offset as usize;
             }
-            
+
             // let data_offset = nr as u64 * self.bootsector.block_size as u64;
             let data_offset = readbytes;
             let end_offset = data_offset + read_size;
 
+            #[cfg(feature = "std")]
             println!("{:?}", data_offset as usize..end_offset as usize);
 
             self.device
@@ -409,10 +412,12 @@ impl<'dev> NoctFS<'dev> {
         // Crop the chain to the working area.
         let chain = &chain[chain_off..];
 
+        #[cfg(feature = "std")]
         println!("{:?}", &chain);
 
         let mut data_length = data.len();
 
+        #[cfg(feature = "std")]
         println!(
             "----- Write: data length: {data_length}; offset: {offset}; {first_occurency_offset}"
         );
@@ -423,31 +428,32 @@ impl<'dev> NoctFS<'dev> {
             if data_length == 0 {
                 break;
             }
-    
+
             let f_offset: u64 = self.datazone_offset_with_block(i);
             self.device.seek(Start(f_offset))?;
-    
+
             let mut write_size = if nr == 0 && first_occurency_offset != 0 {
                 // Calculate available space after the offset in the first block
-                let available_in_first_block = (self.bootsector.block_size as u64 - first_occurency_offset) as usize;
+                let available_in_first_block =
+                    (self.bootsector.block_size as u64 - first_occurency_offset) as usize;
                 core::cmp::min(data_length, available_in_first_block)
             } else {
                 core::cmp::min(data_length, self.bootsector.block_size as usize)
             };
-    
+
             if nr == 0 && first_occurency_offset != 0 {
                 self.device.seek(Current(first_occurency_offset as i64))?;
             }
-    
+
             let data_offset = written;
             let end_offset = data_offset + write_size;
-    
+
             self.device.write_all(&data[data_offset..end_offset])?;
-    
+
             data_length -= write_size;
             written += write_size;
         }
-    
+
         Ok(())
     }
 
