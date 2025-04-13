@@ -267,7 +267,7 @@ impl<'dev> NoctFS<'dev> {
         start_block: BlockAddress,
         data: &mut [u8],
         offset: u64,
-    ) -> io::Result<()> {
+    ) -> io::Result<usize> {
         let chain = self.get_chain(start_block);
         let chain_off = (offset / self.bootsector.block_size as u64) as usize;
         let first_occurency_offset = offset % self.bootsector.block_size as u64;
@@ -279,7 +279,7 @@ impl<'dev> NoctFS<'dev> {
                 chain_off,
                 chain.len()
             );
-            return Ok(());
+            return Ok(0);
         }
 
         let chain = &chain[chain_off..];
@@ -322,7 +322,7 @@ impl<'dev> NoctFS<'dev> {
             readbytes += read_size;
         }
 
-        Ok(())
+        Ok(readbytes)
     }
 
     // pub fn write_blocks_data(
@@ -396,7 +396,7 @@ impl<'dev> NoctFS<'dev> {
         start_block: BlockAddress,
         data: &[u8],
         offset: u64,
-    ) -> io::Result<()> {
+    ) -> io::Result<usize> {
         // Get the chain of blocks.
         let chain: Box<[BlockAddress]> = self.get_chain(start_block);
 
@@ -406,7 +406,7 @@ impl<'dev> NoctFS<'dev> {
 
         // Peacefully exit, if we're out of range
         if chain_off > chain.len() {
-            return Ok(());
+            return Ok(0);
         }
 
         // Crop the chain to the working area.
@@ -432,7 +432,7 @@ impl<'dev> NoctFS<'dev> {
             let f_offset: u64 = self.datazone_offset_with_block(i);
             self.device.seek(Start(f_offset))?;
 
-            let mut write_size = if nr == 0 && first_occurency_offset != 0 {
+            let write_size = if nr == 0 && first_occurency_offset != 0 {
                 // Calculate available space after the offset in the first block
                 let available_in_first_block =
                     (self.bootsector.block_size as u64 - first_occurency_offset) as usize;
@@ -454,7 +454,7 @@ impl<'dev> NoctFS<'dev> {
             written += write_size;
         }
 
-        Ok(())
+        Ok(written)
     }
 
     fn create_root_directory(&mut self) -> io::Result<u64> {
@@ -633,7 +633,7 @@ impl<'dev> NoctFS<'dev> {
         entity: &Entity,
         data: &[u8],
         offset: u64,
-    ) {
+    ) -> io::Result<usize> {
         let block = entity.start_block;
         let data_len = data.len();
 
@@ -643,7 +643,7 @@ impl<'dev> NoctFS<'dev> {
 
         self.set_chain_size(block, target_chain_len);
 
-        self.write_blocks_data(block, data, offset).unwrap();
+        let result = self.write_blocks_data(block, data, offset)?;
 
         // Update file metadata
 
@@ -654,6 +654,8 @@ impl<'dev> NoctFS<'dev> {
 
         self.write_blocks_data(directory_block, &new_entity.as_raw(), ent_offset as _)
             .unwrap();
+
+        Ok(result)
     }
 
     pub fn overwrite_entity_header(
@@ -675,7 +677,7 @@ impl<'dev> NoctFS<'dev> {
         entity: &Entity,
         data: &mut [u8],
         offset: u64,
-    ) -> io::Result<()> {
+    ) -> io::Result<usize> {
         self.read_blocks_data(entity.start_block, data, offset)
     }
 
