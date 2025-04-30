@@ -520,15 +520,18 @@ impl<'dev> NoctFS<'dev> {
             }
 
             index += header_size as usize + 4;
-
+            
             if entity.fact_size() >= (data.len() - index) as _ {
                 self.extend_chain_by(directory_block, 1);
 
-                // println!("=== Extending chain!");
+                #[cfg(feature = "std")]
+                println!("=== Extending chain!");
 
                 data = self.read_chain_data_vec(directory_block);
             }
-        }
+            
+
+         }
 
         None
     }
