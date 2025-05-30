@@ -6,7 +6,6 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
 
-use arrayref::array_ref;
 use bootsector::BootSector;
 use device::Device;
 use entity::{Entity, EntityFlags};
@@ -325,72 +324,6 @@ impl<'dev> NoctFS<'dev> {
         Ok(readbytes)
     }
 
-    // pub fn write_blocks_data(
-    //     &mut self,
-    //     start_block: BlockAddress,
-    //     data: &[u8],
-    //     offset: u64,
-    // ) -> io::Result<()> {
-    //     // Get the chain of blocks.
-    //     let chain: Box<[BlockAddress]> = self.get_chain(start_block);
-
-    //     // Calculate offsets
-    //     let chain_off = (offset / self.bootsector.block_size as u64) as usize;
-    //     let first_occurency_offset = offset % self.bootsector.block_size as u64;
-
-    //     // Peacefully exit, if we're out of range
-    //     if chain_off > chain.len() {
-    //         return Ok(());
-    //     }
-
-    //     // Crop the chain to the working area.
-    //     let chain = &chain[chain_off..];
-
-    //     println!("{:?}", &chain);
-
-    //     let mut data_length = data.len();
-
-    //     println!(
-    //         "----- Write: data length: {data_length}; offset: {offset}; {first_occurency_offset}"
-    //     );
-
-    //     let mut written = 0usize;
-
-    //     for (nr, &i) in chain.iter().enumerate() {
-    //         // If we wrote all data, bail out.
-    //         if data_length == 0 {
-    //             break;
-    //         }
-
-    //         // Get block's byte offset on disk
-    //         let f_offset: u64 = self.datazone_offset_with_block(i);
-    //         self.device.seek(Start(f_offset))?;
-
-    //         // Calculate write_size
-    //         let mut write_size = core::cmp::min(data_length, self.bootsector.block_size as usize);
-
-    //         // If we're writing first block and we have a non-null offset, seek precisely and limit our write size for first block.
-    //         if nr == 0 && first_occurency_offset != 0 {
-    //             self.device.seek(Current(first_occurency_offset as _))?;
-
-    //             write_size -= first_occurency_offset as usize;
-    //         }
-
-    //         let data_offset = written;
-    //         let end_offset = data_offset + write_size;
-
-    //         println!("{:?} -> {}", data_offset..end_offset, write_size);
-
-    //         // Write the data
-    //         self.device.write(&data[data_offset..end_offset])?;
-
-    //         data_length -= write_size;
-    //         written += write_size;
-    //     }
-
-    //     Ok(())
-    // }
-
     pub fn write_blocks_data(
         &mut self,
         start_block: BlockAddress,
@@ -510,7 +443,7 @@ impl<'dev> NoctFS<'dev> {
 
         // Find free space
         while index < data.len() {
-            let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
+            let header_size = u32::from_le_bytes(data[index..index+4].try_into().unwrap());
 
             #[cfg(feature = "std")]
             println!("[{index} / {}] Header size: {}", data.len(), header_size);
@@ -581,7 +514,7 @@ impl<'dev> NoctFS<'dev> {
         let mut index = 0usize;
 
         while index < data.len() {
-            let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
+            let header_size = u32::from_le_bytes(data[index..index+4].try_into().unwrap());
 
             #[cfg(feature = "std")]
             println!("[{} / {}] Header size: {header_size}", index, data.len());
@@ -611,7 +544,7 @@ impl<'dev> NoctFS<'dev> {
         let mut index = 0usize;
 
         while index < data.len() {
-            let header_size = u32::from_le_bytes(*array_ref![data[index..], 0, 4]);
+            let header_size = u32::from_le_bytes(data[index..index+4].try_into().unwrap());
 
             if header_size == 0 {
                 break;
@@ -690,7 +623,7 @@ impl<'dev> NoctFS<'dev> {
         let mut index = 0usize;
 
         while index < data.len() {
-            let header_size = u32::from_le_bytes(*array_ref![data[index..index + 4], 0, 4]);
+            let header_size = u32::from_le_bytes(data[index..index + 4].try_into().unwrap());
 
             if header_size == 0 {
                 break;

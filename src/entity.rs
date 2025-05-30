@@ -3,7 +3,6 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use arrayref::array_ref;
 use bitflags::bitflags;
 
 use crate::{BlockAddress, BLOCK_ADDRESS_SIZE};
@@ -88,7 +87,7 @@ impl Entity {
         let (_, rest) = data.split_at(4); // Skip entity header size
         let (namesize_bytes, rest) = rest.split_at(4);
 
-        let namesize = u32::from_le_bytes(*array_ref![namesize_bytes, 0, 4]) as usize;
+        let namesize = u32::from_le_bytes(namesize_bytes.try_into().unwrap()) as usize;
 
         let (name, rest) = rest.split_at(namesize);
         let name = String::from_utf8_lossy(name).into_owned();
@@ -98,11 +97,11 @@ impl Entity {
         let (flags_bytes, rest) = rest.split_at(4);
         let (vendor_data_size_bytes, _) = rest.split_at(4);
 
-        let size = u64::from_le_bytes(*array_ref![size_bytes, 0, 8]);
-        let offset = u64::from_le_bytes(*array_ref![offset_bytes, 0, BLOCK_ADDRESS_SIZE]);
+        let size = u64::from_le_bytes(size_bytes.try_into().unwrap());
+        let offset = u64::from_le_bytes(offset_bytes.try_into().unwrap());
         let flags =
-            EntityFlags::from_bits(u32::from_le_bytes(*array_ref![flags_bytes, 0, 4])).unwrap();
-        let vendor_data_size = u32::from_le_bytes(*array_ref![vendor_data_size_bytes, 0, 4]);
+            EntityFlags::from_bits(u32::from_le_bytes(flags_bytes.try_into().unwrap())).unwrap();
+        let vendor_data_size = u32::from_le_bytes(vendor_data_size_bytes.try_into().unwrap());
 
         Self {
             name,
